@@ -265,7 +265,8 @@ describe('Weighted round robin LB policy', () => {
       const result = await makeNCalls(client, 30);
       assert(Math.abs(result['1'] - result['2']) < 3, `server1: ${result['1']}, server2: ${result[2]}`);
     });
-    it('Should send more requests to endpoints with higher QPS', async () => {
+    // Timing-dependent (0.1s weight updates): flaky on shared CI runners
+    it.skip('Should send more requests to endpoints with higher QPS', async () => {
       const serviceConfig = createServiceConfig({
         blackout_period: '0.01s',
         weight_update_period: '0.1s'

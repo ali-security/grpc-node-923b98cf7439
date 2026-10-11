@@ -1,0 +1,99 @@
+name: seal-build
+
+# grpc-node has no GitHub Actions workflow that builds or tests @grpc/grpc-js
+# (upstream CI is Kokoro: run-tests.sh / run-tests.bat on Linux, macOS and
+# Windows with Node 20 and 22). The test job mirrors that matrix; the pack job
+# packs grpc-js on Node 22, the runtime that packed the published tarball.
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: "Mocha --grep pattern; empty runs the full suite"
+        required: false
+        default: ""
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: ["20", "22"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch proto submodules used by copy-protos
+        run: git submodule update --init packages/grpc-js-xds/deps/protoc-gen-validate packages/grpc-js-xds/deps/xds
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Configure npm time machine registry
+        run: |
+          npm config set registry https://time-machines-npm.sealsecurity.io/
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken 2025-12-02T15:09:49.055000Z
+      - name: Build proto-loader (file:../proto-loader devDependency)
+        working-directory: packages/proto-loader
+        run: |
+          npm install
+          npm run compile
+      - name: Install and compile grpc-js
+        working-directory: packages/grpc-js
+        run: |
+          npm run copy-protos
+          npm install
+      - name: Test
+        working-directory: packages/grpc-js
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            mkdir -p build/test
+            cp -r test/fixtures build/test/
+            GRPC_EXPERIMENTAL_ENABLE_OUTLIER_DETECTION=true npx mocha --require ts-node/register 'build/test/**/*.js' --grep "${{ inputs.test-filter }}"
+          else
+            npx gulp test
+          fi
+
+  pack:
+    name: pack (ubuntu-latest, node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch proto submodules used by copy-protos
+        run: git submodule update --init packages/grpc-js-xds/deps/protoc-gen-validate packages/grpc-js-xds/deps/xds
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Pin npm to the release's packer version
+        run: npm install -g npm@10.9.4
+      - name: Configure npm time machine registry
+        run: |
+          npm config set registry https://time-machines-npm.sealsecurity.io/
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken 2025-12-02T15:09:49.055000Z
+      - name: Build proto-loader (file:../proto-loader devDependency)
+        working-directory: packages/proto-loader
+        run: |
+          npm install
+          npm run compile
+      - name: Install and compile grpc-js
+        working-directory: packages/grpc-js
+        run: |
+          npm run copy-protos
+          npm install
+      - name: Pack
+        working-directory: packages/grpc-js
+        run: |
+          npm pack
+          mkdir -p "$GITHUB_WORKSPACE/seal-dist"
+          mv grpc-grpc-js-1.14.2.tgz "$GITHUB_WORKSPACE/seal-dist/grpc-js-1.14.2.tgz"
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: grpc-js-tgz
+          path: seal-dist/grpc-js-1.14.2.tgz
+          if-no-files-found: error

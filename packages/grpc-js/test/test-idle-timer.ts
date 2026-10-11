@@ -132,7 +132,12 @@ describe('Channel idle timer', () => {
 describe('Channel idle timer with UDS', () => {
   let server: TestServer;
   let client: TestClient | null = null;
-  before(() => {
+  before(function () {
+    // Unix domain sockets are not bindable at an os.tmpdir() path on Windows
+    // runners (listen EACCES); this suite only exercises the UDS transport.
+    if (process.platform === 'win32') {
+      this.skip();
+    }
     server = new TestServer(false);
     return server.startUds();
   });
@@ -143,7 +148,7 @@ describe('Channel idle timer with UDS', () => {
     }
   });
   after(() => {
-    server.shutdown();
+    server?.shutdown();
   });
   it('Should be able to make a request after going idle', function (done) {
     this.timeout(5000);
