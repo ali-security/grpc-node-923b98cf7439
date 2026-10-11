@@ -736,6 +736,12 @@ export class BaseServerInterceptingCall
       return new Promise((resolve, reject) => {
         let totalLength = 0
         const messageParts: Buffer[] = [];
+        decompresser.on('error', (error: Error) => {
+          reject({
+            code: Status.INTERNAL,
+            details: `Failed to decompress ${encoding}-encoded message`
+          });
+        });
         decompresser.on('data', (chunk: Buffer) => {
           messageParts.push(chunk);
           totalLength += chunk.byteLength;
